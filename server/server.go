@@ -1,125 +1,71 @@
+// This file is part of Hyper-Grid.
+//
+// Hyper-Grid is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// any later version.
+//
+// Hyper-Grid is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Hyper-Grid.  If not, see <http://www.gnu.org/licenses/>.
+//
+// This file is created by Mohi Beyki <mohibeyki@gmail.com>
+//
+
 package main
 
 import (
-	"fmt"
+	"flag"
 	"log"
 	"net/http"
-	"strconv"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
 
-var clients = make([]*websocket.Conn, 0)
+var addr = flag.String("addr", "localhost:8080", "http service address")
 
-var upgrader = websocket.Upgrader{
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
-	CheckOrigin: func(r *http.Request) bool {
-		return true
-	},
-}
+var upgrader = websocket.Upgrader{} // use default options
 
-func printBinary(s []byte) {
-	fmt.Printf("Received b:")
-	for n := 0; n < len(s); n++ {
-		fmt.Printf("%d,", s[n])
-	}
-	fmt.Printf("\n")
-}
-
-func echoHandler(w http.ResponseWriter, r *http.Request) {
-	conn, err := upgrader.Upgrade(w, r, nil)
+func echo(w http.ResponseWriter, r *http.Request) {
+	c, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Println(err)
+		log.Print("upgrade:", err)
 		return
 	}
+	defer c.Close()
+
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
 
 	for {
-		messageType, p, err := conn.ReadMessage()
+		mt, message, err := c.ReadMessage()
 		if err != nil {
-			log.Println(err)
-			return
+			log.Println("read:", err)
+			break
+		}
+		log.Printf("recv: %s", message)
+
+		err = c.WriteMessage(mt, message)
+		if err != nil {
+			log.Println("write:", err)
+			break
 		}
 
-		printBinary(p)
-
-		err = conn.WriteMessage(messageType, p)
-		if err != nil {
-			log.Println(err)
-			return
+		if string(message) == "exit" {
+			defer c.Close()
+			break
 		}
 	}
 }
-
-func registerHandler(w http.ResponseWriter, r *http.Request) {
-	conn, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		log.Println(err)
-		return
-	}
-
-	messageType, p, err := conn.ReadMessage()
-	if err != nil {
-		log.Println(err)
-		return
-	}
-
-	log.Println("A client has connected!")
-	// log.Println(messageType)
-
-	clients = append(clients, conn)
-
-	err = conn.WriteMessage(messageType, p)
-	if err != nil {
-		log.Println(err)
-		return
-	}
-	i := 0
-	for {
-		xar(i)
-		i = i + 1
-	}
-}
-
-func xar(i int) {
-	log.Println("In XAR")
-	for c := range clients {
-		// log.Println(c)
-		s := "Do You GET THIS? " + strconv.Itoa(i)
-		clients[c].WriteMessage(1, []byte(s))
-	}
-}
-
-// func (h *types.Hub) run() {
-// 	for {
-// 		select {
-// 		case c := <-h.register:
-// 			h.clients[c] = true
-// 			c.send <- []byte(h.content)
-// 			break
-//
-// 		case c := <-h.unregister:
-// 			_, ok := h.clients[c]
-// 			if ok {
-// 				delete(h.clients, c)
-// 				close(c.send)
-// 			}
-// 			break
-//
-// 		case m := <-h.broadcast:
-// 			h.content = m
-// 			h.broadcastMessage()
-// 			break
-// 		}
-// 	}
-// }
 
 func main() {
-	http.HandleFunc("/echo", echoHandler)
-	http.HandleFunc("/register", registerHandler)
-	http.Handle("/", http.FileServer(http.Dir(".")))
-	err := http.ListenAndServe(":8080", nil)
-	if err != nil {
-		panic("Error: " + err.Error())
-	}
+	flag.Parse()
+	log.SetFlags(1)
+	http.HandleFunc("/echo", echo)
+	log.Fatal(http.ListenAndServe(*addr, nil))
 }
