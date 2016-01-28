@@ -2,6 +2,9 @@
 *.o
 *.a
 *.so
+*.in
+
+.DS_Store
 
 # Folders
 _obj

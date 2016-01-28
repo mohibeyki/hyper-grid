@@ -20,52 +20,66 @@ package main
 
 import (
 	"flag"
+	"io/ioutil"
 	"log"
 	"net/http"
-	"time"
 
 	"github.com/gorilla/websocket"
 )
 
 var addr = flag.String("addr", "localhost:8080", "http service address")
-
+var data []byte
 var upgrader = websocket.Upgrader{} // use default options
+var count = 0
 
-func echo(w http.ResponseWriter, r *http.Request) {
-	c, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		log.Print("upgrade:", err)
-		return
+func check(e error) {
+	if e != nil {
+		panic(e)
 	}
+}
+
+func clientHandler(w http.ResponseWriter, r *http.Request) {
+	c, err := upgrader.Upgrade(w, r, nil)
+	check(err)
 	defer c.Close()
 
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
-
+	// sends data to the client
 	for {
-		mt, message, err := c.ReadMessage()
-		if err != nil {
-			log.Println("read:", err)
-			break
-		}
-		log.Printf("recv: %s", message)
+		_, message, err := c.ReadMessage()
+		check(err)
 
-		err = c.WriteMessage(mt, message)
-		if err != nil {
-			log.Println("write:", err)
-			break
-		}
+		cmd := string(message)
+		// log.Println("Received: ", cmd)
 
-		if string(message) == "exit" {
-			defer c.Close()
-			break
+		if cmd == "init" {
+			err = c.WriteMessage(websocket.TextMessage, data)
+			check(err)
+		} else {
+			str := "done"
+			if count >= 0 {
+				str = "exit"
+			}
+			log.Println("Count: ", count)
+			err = c.WriteMessage(websocket.TextMessage, []byte(str))
+			check(err)
+			if count >= 0 {
+				count = 0
+				break
+			}
+			count = count + 1
 		}
 	}
 }
 
 func main() {
+	var err error
+
 	flag.Parse()
 	log.SetFlags(1)
-	http.HandleFunc("/echo", echo)
+
+	data, err = ioutil.ReadFile("2048.in")
+	check(err)
+
+	http.HandleFunc("/", clientHandler)
 	log.Fatal(http.ListenAndServe(*addr, nil))
 }

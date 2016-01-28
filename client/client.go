@@ -19,87 +19,89 @@
 package main
 
 import (
-	"bufio"
+	"bytes"
 	"flag"
+	"io"
 	"log"
 	"net/url"
-	"os"
+	"os/exec"
 	"sync"
-	"time"
 
 	"github.com/gorilla/websocket"
 )
 
 var addr = flag.String("addr", "localhost:8080", "http service address")
-var running = true
+
+func check(e error) {
+	if e != nil {
+		panic(e)
+	}
+}
+
+func populateStdin(str string) func(io.WriteCloser) {
+	return func(stdin io.WriteCloser) {
+		defer stdin.Close()
+		io.Copy(stdin, bytes.NewBufferString(str))
+	}
+}
 
 // receiveHandler handles all incoming data from server and runs as a goroutine
-func receiveHandler(connection *websocket.Conn, wg *sync.WaitGroup) {
+func jobHandler(serverConnection *websocket.Conn, wg *sync.WaitGroup) {
 	// Ensures channel and waitgroup are closed and done
 	defer wg.Done()
 
-	// Waits on incoming messages and processes them, and if client is exiting, exits
-	for running {
-		_, message, err := connection.ReadMessage()
-		if err != nil {
-			log.Printf("error[read]: %s", err)
-			break
-		}
-		log.Printf("received: %s", message)
-		if string(message) == "exit" {
-			break
-		}
-	}
-}
+	// This is the main loop, in each loop a job is being processed
+	for {
+		// Send init signal to server
+		serverConnection.WriteMessage(websocket.TextMessage, []byte("init"))
 
-// Creates a ticker and sends a dummy msg on each tick
-func dummySender(connection *websocket.Conn, wg *sync.WaitGroup) {
-	// Creates a ticker
-	ticker := time.NewTicker(time.Second)
+		// Waits on incoming messages and processes them, and if client is exiting, exits
+		_, data, err := serverConnection.ReadMessage()
+		check(err)
 
-	// Ensures ticker and waitgroup are stoped and done
-	defer ticker.Stop()
-	defer wg.Done()
+		// Runs the OpenMatrix program that calculates matrix multiplication by OpenCL
+		child := exec.Command("./OpenMatrix")
 
-	// For each tick (every second)
-	for t := range ticker.C {
-		if !running {
-			break
-		}
+		stdin, err := child.StdinPipe()
+		check(err)
 
-		msg := "dummySender @ " + t.String()
-		err := connection.WriteMessage(websocket.TextMessage, []byte(msg))
-		if err != nil {
-			log.Printf("error[dummySender]: %s", err)
-			break
-		}
-	}
-}
+		stdout, err := child.StdoutPipe()
+		check(err)
 
-func sendMessage(connection *websocket.Conn, msg string) {
-	err := connection.WriteMessage(websocket.TextMessage, []byte(msg))
-	if err != nil {
-		log.Printf("error[sendMessage]: %s", err)
-	}
-}
+		err = child.Start()
+		check(err)
 
-func inputHandler(connection *websocket.Conn, wg *sync.WaitGroup) {
-	// Ensures waitgroup is done
-	defer wg.Done()
+		var wg sync.WaitGroup
+		wg.Add(2)
 
-	// Handles input
-	scanner := bufio.NewScanner(os.Stdin)
+		go func() {
+			defer wg.Done()
+			defer stdin.Close()
+			io.Copy(stdin, bytes.NewBuffer(data))
+		}()
 
-	// While it had input on scanner
-	for scanner.Scan() {
-		sendMessage(connection, scanner.Text())
+		newBuf := bytes.NewBuffer(make([]byte, 0))
 
-		// Should terminate the loop on exit command
-		if scanner.Text() == "exit" {
-			// Sets running to false, not sure if its a good thing yet, used in dummySender
-			running = false
-			log.Printf("Exiting...")
-			break
+		go func() {
+			defer wg.Done()
+			io.Copy(newBuf, stdout)
+		}()
+
+		wg.Wait()
+		// Ensures the child has exited
+		err = child.Wait()
+		check(err)
+
+		// Sends data back to server
+		serverConnection.WriteMessage(websocket.TextMessage, newBuf.Bytes())
+
+		_, data, err = serverConnection.ReadMessage()
+		check(err)
+
+		if string(data) == "exit" {
+			return
+		} else if string(data) != "done" {
+			log.Println("Received unexpected data from server")
 		}
 	}
 }
@@ -112,10 +114,12 @@ func main() {
 	// Getting data from flag
 	flag.Parse()
 	log.SetFlags(0)
+
+	// disables or enables log
 	// log.SetOutput(ioutil.Discard)
 
 	// Creates websocket url that connects to /echo on server
-	serverURL := url.URL{Scheme: "ws", Host: *addr, Path: "/echo"}
+	serverURL := url.URL{Scheme: "ws", Host: *addr, Path: "/"}
 	log.Printf("status[main]: connecting to %s", serverURL.String())
 
 	// Dials server with serverURL and handles errors
@@ -128,17 +132,9 @@ func main() {
 
 	// Calls a receiveHandler and adds it to the waitgroup
 	wg.Add(1)
-	go receiveHandler(serverConnection, &wg)
-
-	// Calls a dummySender and adds it to the waitgroup
-	wg.Add(1)
-	go dummySender(serverConnection, &wg)
-
-	wg.Add(1)
-	go inputHandler(serverConnection, &wg)
-
-	log.Printf("Waiting on goroutines")
+	go jobHandler(serverConnection, &wg)
 
 	// Waits on all goroutines
+	log.Printf("Waiting on goroutines")
 	wg.Wait()
 }
