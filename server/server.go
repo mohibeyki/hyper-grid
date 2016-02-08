@@ -228,17 +228,13 @@ func main() {
 	flag.Parse()
 	log.SetFlags(1)
 
-	file, err := os.Open("256.in")
+	file, err := os.Open("2.in")
 	check(err)
 
 	n, a, b := ParseMatrix(file)
 
-	// fmt.Println("Size is:", n)
-	// fmt.Println(a)
-	// fmt.Println(b)
-
-	_ = Strassen(n, a, b)
-	// fmt.Println(res)
+	res := Strassen(n, a, b)
+	fmt.Println(res)
 
 	// data, err = ioutil.ReadFile("32.in")
 	// check(err)
