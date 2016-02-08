@@ -19,18 +19,22 @@
 package main
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 
 	"github.com/gorilla/websocket"
 )
 
 var addr = flag.String("addr", "localhost:8080", "http service address")
 var data []byte
+var a, b [][]int
+var n int
 var upgrader = websocket.Upgrader{} // use default options
 var count = 0
 
@@ -38,6 +42,21 @@ func check(e error) {
 	if e != nil {
 		panic(e)
 	}
+}
+
+func getString(m [][]int) string {
+	var res bytes.Buffer
+	var n = len(m)
+	res.WriteString(strconv.Itoa(n))
+	res.WriteString(" ")
+	for i := 0; i < n; i++ {
+		for j := 0; j < n; j++ {
+			res.WriteString(strconv.Itoa(m[i][j]))
+			res.WriteString(" ")
+		}
+	}
+
+	return res.String()
 }
 
 func clientHandler(w http.ResponseWriter, r *http.Request) {
@@ -119,6 +138,15 @@ func MMinus(n int, a, b [][]int) [][]int {
 			row[j] = a[i][j] - b[i][j]
 		}
 		res[i] = row
+	}
+	return res
+}
+
+// SubMatrix func
+func SubMatrix(m [][]int, msize, x, y int) [][]int {
+	res := make([][]int, msize)
+	for i := 0; i < msize; i++ {
+		res[i] = m[i+y][x : x+msize]
 	}
 	return res
 }
@@ -227,18 +255,25 @@ func main() {
 
 	flag.Parse()
 	log.SetFlags(1)
+	limit := 256
 
 	file, err := os.Open("2.in")
 	check(err)
 
-	n, a, b := ParseMatrix(file)
+	n, a, b = ParseMatrix(file)
+	msize := n / limit
+	matrixes := make([][]int, msize)
 
-	res := Strassen(n, a, b)
-	fmt.Println(res)
+	for i := 0; i < msize; i++ {
+		matrixes[i] = make([]int, msize)
+	}
+
+	// res := Strassen(n, a, b)
+	// fmt.Println(res)
 
 	// data, err = ioutil.ReadFile("32.in")
 	// check(err)
 
-	// http.HandleFunc("/", clientHandler)
-	// log.Fatal(http.ListenAndServe(*addr, nil))
+	http.HandleFunc("/", clientHandler)
+	log.Fatal(http.ListenAndServe(*addr, nil))
 }
