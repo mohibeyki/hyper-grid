@@ -99,13 +99,26 @@ func ParseMatrix(r io.Reader) (int, [][]int, [][]int) {
 
 // MPlus addes two matrixes
 func MPlus(n int, a, b [][]int) [][]int {
-	res := [][]int{}
+	res := make([][]int, n)
 	for i := 0; i < n; i++ {
-		row := []int{}
+		row := make([]int, n)
 		for j := 0; j < n; j++ {
-			row = append(row, a[i][j]+b[i][j])
+			row[j] = a[i][j] + b[i][j]
 		}
-		res = append(res, row)
+		res[i] = row
+	}
+	return res
+}
+
+// MMinus addes two matrixes
+func MMinus(n int, a, b [][]int) [][]int {
+	res := make([][]int, n)
+	for i := 0; i < n; i++ {
+		row := make([]int, n)
+		for j := 0; j < n; j++ {
+			row[j] = a[i][j] - b[i][j]
+		}
+		res[i] = row
 	}
 	return res
 }
@@ -113,61 +126,57 @@ func MPlus(n int, a, b [][]int) [][]int {
 func divide(m [][]int) ([][]int, [][]int, [][]int, [][]int) {
 	n := len(m)
 
-	m11 := [][]int{}
-	m12 := [][]int{}
-	m21 := [][]int{}
-	m22 := [][]int{}
+	m11 := make([][]int, n/2)
+	m12 := make([][]int, n/2)
+	m21 := make([][]int, n/2)
+	m22 := make([][]int, n/2)
 
 	for i := 0; i < n/2; i++ {
-		m11 = append(m11, m[i][:n/2])
-		m12 = append(m12, m[i][n/2:])
+		m11[i] = m[i][:n/2]
+		m12[i] = m[i][n/2:]
 	}
 
 	for i := n / 2; i < n; i++ {
-		m21 = append(m21, m[i][:n/2])
-		m22 = append(m22, m[i][n/2:])
+		m21[i-n/2] = m[i][:n/2]
+		m22[i-n/2] = m[i][n/2:]
 	}
+
 	return m11, m12, m21, m22
 }
 
 func reconstruct(a11, a12, a21, a22 [][]int) [][]int {
-	res := [][]int{}
 	n := len(a11)
+	size := n * 2
+	res := make([][]int, size)
+
 	for i := 0; i < n; i++ {
-		row := []int{}
-		row = append(row, a11[i]...)
-		row = append(row, a12[i]...)
-		res = append(res, row)
+		row := make([]int, size)
+		for j := 0; j < n; j++ {
+			row[2*j] = a11[i][j]
+			row[2*j+1] = a12[i][j]
+		}
+		res[i] = row
 	}
 
 	for i := 0; i < n; i++ {
-		row := []int{}
-		row = append(row, a21[i]...)
-		row = append(row, a22[i]...)
-		res = append(res, row)
+		row := make([]int, size)
+		for j := 0; j < n; j++ {
+			row[2*j] = a21[i][j]
+			row[2*j+1] = a22[i][j]
+		}
+		res[i+n] = row
 	}
 	return res
 }
 
-// MMult Function, recursively computes matrix multiplication
+// MMult func, does matrix multiplication
 func MMult(n int, a, b [][]int) [][]int {
 	if n == 1 {
 		return [][]int{{a[0][0] * b[0][0]}}
 	}
 
 	a11, a12, a21, a22 := divide(a)
-	// fmt.Println("A is")
-	// fmt.Println(a11)
-	// fmt.Println(a12)
-	// fmt.Println(a21)
-	// fmt.Println(a22)
-
 	b11, b12, b21, b22 := divide(b)
-	// fmt.Println("B is")
-	// fmt.Println(b11)
-	// fmt.Println(b12)
-	// fmt.Println(b21)
-	// fmt.Println(b22)
 
 	x1 := MMult(n/2, a11, b11)
 	x2 := MMult(n/2, a12, b21)
@@ -183,11 +192,31 @@ func MMult(n int, a, b [][]int) [][]int {
 	c21 := MPlus(n/2, x5, x6)
 	c22 := MPlus(n/2, x7, x8)
 
-	// fmt.Println("C is")
-	// fmt.Println(c11)
-	// fmt.Println(c12)
-	// fmt.Println(c21)
-	// fmt.Println(c22)
+	res := reconstruct(c11, c12, c21, c22)
+	return res
+}
+
+// Strassen Function, recursively computes matrix multiplication
+func Strassen(n int, a, b [][]int) [][]int {
+	if n == 1 {
+		return [][]int{{a[0][0] * b[0][0]}}
+	}
+
+	a11, a12, a21, a22 := divide(a)
+	b11, b12, b21, b22 := divide(b)
+
+	p1 := Strassen(n/2, a11, MMinus(n/2, b12, b22))
+	p2 := Strassen(n/2, MPlus(n/2, a11, a12), b22)
+	p3 := Strassen(n/2, MPlus(n/2, a21, a22), b11)
+	p4 := Strassen(n/2, a22, MMinus(n/2, b21, b11))
+	p5 := Strassen(n/2, MPlus(n/2, a11, a22), MPlus(n/2, b11, b22))
+	p6 := Strassen(n/2, MMinus(n/2, a12, a22), MPlus(n/2, b21, b22))
+	p7 := Strassen(n/2, MMinus(n/2, a11, a21), MPlus(n/2, b11, b12))
+
+	c11 := MPlus(n/2, MMinus(n/2, MPlus(n/2, p5, p4), p2), p6)
+	c12 := MPlus(n/2, p1, p2)
+	c21 := MPlus(n/2, p3, p4)
+	c22 := MMinus(n/2, MMinus(n/2, MPlus(n/2, p1, p5), p3), p7)
 
 	res := reconstruct(c11, c12, c21, c22)
 	return res
@@ -199,7 +228,7 @@ func main() {
 	flag.Parse()
 	log.SetFlags(1)
 
-	file, err := os.Open("512.in")
+	file, err := os.Open("256.in")
 	check(err)
 
 	n, a, b := ParseMatrix(file)
@@ -208,7 +237,7 @@ func main() {
 	// fmt.Println(a)
 	// fmt.Println(b)
 
-	_ = MMult(n, a, b)
+	_ = Strassen(n, a, b)
 	// fmt.Println(res)
 
 	// data, err = ioutil.ReadFile("32.in")
