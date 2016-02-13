@@ -1,14 +1,14 @@
 
 kernel void add(
-                global int* a,
-                global int* b,
-                global int* res_mem) {
+                global float* a,
+                global float* b,
+                global float* res_mem) {
 
     size_t n = get_global_size(0);
     size_t x = get_global_id(0);
     size_t y = get_global_id(1);
 
-    int sum = 0;
+    float sum = 0;
     for (int i = 0; i < n; ++i) {
         sum += a[y * n + i] * b[i * n + x];
     }

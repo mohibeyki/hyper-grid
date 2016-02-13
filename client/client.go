@@ -25,6 +25,7 @@ import (
 	"log"
 	"net/url"
 	"os/exec"
+	"strings"
 	"sync"
 
 	"github.com/gorilla/websocket"
@@ -56,51 +57,60 @@ func jobHandler(serverConnection *websocket.Conn, wg *sync.WaitGroup) {
 		serverConnection.WriteMessage(websocket.TextMessage, []byte("init"))
 
 		// Waits on incoming messages and processes them, and if client is exiting, exits
-		_, data, err := serverConnection.ReadMessage()
+		_, bytedata, err := serverConnection.ReadMessage()
 		check(err)
 
-		// Runs the OpenMatrix program that calculates matrix multiplication by OpenCL
-		child := exec.Command("./OpenMatrix")
+		data := strings.Trim(string(bytedata), " ")
+		// log.Println("RECV:", data)
 
-		stdin, err := child.StdinPipe()
-		check(err)
+		if data != "exit" {
+			// Runs the OpenMatrix program that calculates matrix multiplication by OpenCL
+			child := exec.Command("./OpenMatrix")
 
-		stdout, err := child.StdoutPipe()
-		check(err)
+			stdin, err := child.StdinPipe()
+			check(err)
 
-		err = child.Start()
-		check(err)
+			stdout, err := child.StdoutPipe()
+			check(err)
 
-		var wg sync.WaitGroup
-		wg.Add(2)
+			err = child.Start()
+			check(err)
 
-		go func() {
-			defer wg.Done()
-			defer stdin.Close()
-			io.Copy(stdin, bytes.NewBuffer(data))
-		}()
+			var wg sync.WaitGroup
+			wg.Add(2)
 
-		newBuf := bytes.NewBuffer(make([]byte, 0))
+			go func() {
+				defer wg.Done()
+				defer stdin.Close()
+				io.Copy(stdin, bytes.NewBuffer(bytedata))
+			}()
 
-		go func() {
-			defer wg.Done()
-			io.Copy(newBuf, stdout)
-		}()
+			newBuf := bytes.NewBuffer(make([]byte, 0))
 
-		wg.Wait()
-		// Ensures the child has exited
-		err = child.Wait()
-		check(err)
+			go func() {
+				defer wg.Done()
+				io.Copy(newBuf, stdout)
+			}()
 
-		// Sends data back to server
-		serverConnection.WriteMessage(websocket.TextMessage, newBuf.Bytes())
+			wg.Wait()
+			// Ensures the child has exited
+			err = child.Wait()
+			check(err)
 
-		_, data, err = serverConnection.ReadMessage()
-		check(err)
+			// Sends data back to server
+			err = serverConnection.WriteMessage(websocket.TextMessage, newBuf.Bytes())
+			check(err)
+			// log.Println("SENT: ", string(newBuf.Bytes()))
+			log.Println("status[handler]: sent the results to server!")
 
-		if string(data) == "exit" {
+			_, bytedata, err = serverConnection.ReadMessage()
+			check(err)
+			data = string(bytedata)
+		}
+
+		if data == "exit" {
 			return
-		} else if string(data) != "done" {
+		} else if data != "done" {
 			log.Println("Received unexpected data from server")
 		}
 	}

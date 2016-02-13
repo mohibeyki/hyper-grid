@@ -27,3 +27,4 @@ server/server
 *.exe
 *.test
 *.prof
+*.exec
