@@ -42,8 +42,8 @@ type Job struct {
 
 var addr = flag.String("addr", "localhost:8080", "http service address")
 var data []byte
-var a, b [][]float64
-var n int
+var ga, gb [][]float64
+var gn int
 var upgrader = websocket.Upgrader{} // use default options
 var doneJobs = 0
 var blockSize = 0
@@ -279,7 +279,7 @@ func clientHandler(w http.ResponseWriter, r *http.Request) {
 				check(err)
 				log.Println("status: no job in jobQueue")
 				if doneJobs >= totalJobs {
-					asd := strassenMerger(n, a, b, 0)
+					asd := strassenMerger(gn, ga, gb, 0)
 					for i := 0; i < len(asd); i++ {
 						for j := 0; j < len(asd[i]); j++ {
 							fmt.Print(asd[i][j], " ")
@@ -409,8 +409,8 @@ func main() {
 	file, err := os.Open("64.in")
 	check(err)
 
-	n, a, b = parseMatrix(file)
-	blockCount = n / blockSize
+	gn, ga, gb = parseMatrix(file)
+	blockCount = gn / blockSize
 
 	power := math.Log2(float64(blockCount))
 	memCap := 1
@@ -421,7 +421,7 @@ func main() {
 	}
 	jobResults = make([][][]float64, memCap)
 
-	go strassenJobAdder(n, a, b, 0)
+	go strassenJobAdder(gn, ga, gb, 0)
 
 	// res := strassen(n, a, b)
 	// log.Println(res)
